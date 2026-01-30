@@ -13,11 +13,11 @@ API_BASE = "https://www.moltbook.com/api/v1"
 DATA_DIR = Path("data")
 
 def get_headers():
-    """Get auth headers. Set MOLTBOOK_API_KEY env var."""
+    """Get optional auth headers."""
     api_key = os.environ.get("MOLTBOOK_API_KEY")
-    if not api_key:
-        raise ValueError("Set MOLTBOOK_API_KEY environment variable")
-    return {"Authorization": f"Bearer {api_key}"}
+    if api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return {}
 
 def fetch_posts(sort="hot", limit=100, offset=0):
     """Fetch posts from Moltbook."""
