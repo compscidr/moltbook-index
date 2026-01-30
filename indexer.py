@@ -6,7 +6,7 @@ Moltbook indexer - builds searchable SQLite database from scraped data.
 import json
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 DB_PATH = Path("moltbook.db")
 DATA_DIR = Path("data")
@@ -43,7 +43,6 @@ def init_db(conn):
         CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts USING fts5(
             title,
             content,
-            author_name,
             content='posts',
             content_rowid='rowid'
         );
@@ -60,19 +59,20 @@ def init_db(conn):
         
         -- Triggers to keep FTS in sync
         CREATE TRIGGER IF NOT EXISTS posts_ai AFTER INSERT ON posts BEGIN
-            INSERT INTO posts_fts(rowid, title, content, author_name)
-            SELECT NEW.rowid, NEW.title, NEW.content, 
-                   (SELECT name FROM agents WHERE id = NEW.author_id);
+            INSERT INTO posts_fts(rowid, title, content)
+            VALUES (NEW.rowid, NEW.title, NEW.content);
         END;
     """)
     conn.commit()
 
 def index_posts(conn, posts):
     """Index posts into the database."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     for post in posts:
         author = post.get("author", {})
+        if not author.get("id"):
+            continue
         
         # Upsert agent
         conn.execute("""
@@ -114,6 +114,12 @@ def index_posts(conn, posts):
             post.get("created_at"),
             now
         ))
+        
+        # Insert into FTS
+        conn.execute("""
+            INSERT OR REPLACE INTO posts_fts(rowid, title, content)
+            SELECT rowid, title, content FROM posts WHERE id = ?
+        """, (post.get("id"),))
     
     conn.commit()
     print(f"Indexed {len(posts)} posts")
@@ -126,23 +132,40 @@ def search_posts(conn, query, limit=20):
         JOIN posts p ON fts.rowid = p.rowid
         JOIN agents a ON p.author_id = a.id
         WHERE posts_fts MATCH ?
-        ORDER BY rank
+        ORDER BY p.upvotes DESC
         LIMIT ?
     """, (query, limit))
     return cursor.fetchall()
 
 def search_agents(conn, query, limit=20):
-    """Search for agents by name or expertise."""
+    """Search for agents by name or post content."""
     cursor = conn.execute("""
         SELECT DISTINCT a.id, a.name, a.karma, a.follower_count
         FROM agents a
-        LEFT JOIN posts p ON a.id = p.author_id
-        LEFT JOIN posts_fts fts ON fts.rowid = p.rowid
-        WHERE a.name LIKE ? OR posts_fts MATCH ?
+        WHERE a.name LIKE ?
         ORDER BY a.karma DESC
         LIMIT ?
-    """, (f"%{query}%", query, limit))
-    return cursor.fetchall()
+    """, (f"%{query}%", limit))
+    results = list(cursor.fetchall())
+    
+    # Also find agents who posted about this topic
+    cursor = conn.execute("""
+        SELECT DISTINCT a.id, a.name, a.karma, a.follower_count
+        FROM posts_fts fts
+        JOIN posts p ON fts.rowid = p.rowid
+        JOIN agents a ON p.author_id = a.id
+        WHERE posts_fts MATCH ?
+        ORDER BY a.karma DESC
+        LIMIT ?
+    """, (query, limit))
+    
+    seen = {r[0] for r in results}
+    for row in cursor.fetchall():
+        if row[0] not in seen:
+            results.append(row)
+            seen.add(row[0])
+    
+    return sorted(results, key=lambda x: x[2], reverse=True)[:limit]
 
 def get_stats(conn):
     """Get index statistics."""
@@ -183,7 +206,7 @@ if __name__ == "__main__":
         for row in search_posts(conn, query):
             print(f"- [{row[3]}] {row[1] or '(no title)'} ({row[4]} upvotes)")
         
-        print("\n=== Agents ===")
+        print("\n=== Agents who discuss this ===")
         for row in search_agents(conn, query):
             print(f"- {row[1]} (karma: {row[2]}, followers: {row[3]})")
     
