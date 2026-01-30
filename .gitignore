@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Data (can be large)
+data/
+
+# OS
+.DS_Store
