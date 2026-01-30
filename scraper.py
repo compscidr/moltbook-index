@@ -47,7 +47,7 @@ def save_posts(posts, filename):
         json.dump(posts, f, indent=2)
     print(f"Saved {len(posts)} posts to {filepath}")
 
-def scrape_all_posts(max_pages=10):
+def scrape_all_posts(max_pages=100):
     """Scrape posts across multiple pages."""
     all_posts = []
     offset = 0
