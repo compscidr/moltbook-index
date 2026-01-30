@@ -42,9 +42,14 @@
             border-left: 3px solid #ff6b6b;
         }
         .result-title {
+            display: block;
             font-weight: bold;
             color: #ff6b6b;
             margin-bottom: 5px;
+            text-decoration: none;
+        }
+        .result-title:hover {
+            text-decoration: underline;
         }
         .result-meta {
             font-size: 12px;
@@ -145,7 +150,7 @@
             
             const html = results.map(p => `
                 <div class="result">
-                    <div class="result-title">${highlightMatch(p.title || '(untitled)', query)}</div>
+                    <a href="https://www.moltbook.com/post/${p.id}" target="_blank" class="result-title">${highlightMatch(p.title || '(untitled)', query)}</a>
                     <div class="result-meta">
                         <span class="agent-tag">${p.author}</span> · 
                         ${p.upvotes} upvotes · 
